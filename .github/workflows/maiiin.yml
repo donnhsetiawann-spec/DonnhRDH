@@ -1,4 +1,4 @@
-name: Build AML
+name: Build AML (32-bit & 64-bit) nee
 
 on:
   workflow_dispatch:
@@ -16,15 +16,36 @@ jobs:
       - name: Checkout AML repo
         uses: actions/checkout@v4
 
+      - name: Locate AML project folder
+        run: |
+          AML_DIR=""
+          for f in $(find . -maxdepth 6 -type f -name "Android.mk" \
+                     -not -path "*/ARMPatch/*" \
+                     -not -path "*/template_of_mod/*" \
+                     -not -path "*/AML_PrecompiledLibs/*"); do
+            d=$(dirname "$f")
+            if [ -f "$d/aml.cpp" ]; then
+              AML_DIR="$d"
+              break
+            fi
+          done
+          if [ -z "$AML_DIR" ]; then
+            echo "::error::Tidak ketemu Android.mk milik AML (yang bersebelahan dengan aml.cpp). Berikut semua Android.mk yang ada di repo:"
+            find . -type f -name "Android.mk"
+            exit 1
+          fi
+          echo "Ketemu folder project AML di: $AML_DIR"
+          echo "AML_DIR=$AML_DIR" >> "$GITHUB_ENV"
+
       - name: Fetch ARMPatch source (with its nested submodule)
         run: |
-          rm -rf ARMPatch
-          git clone --recurse-submodules https://github.com/RusJJ/ARMPatch.git ARMPatch
+          rm -rf "$AML_DIR/ARMPatch"
+          git clone --recurse-submodules https://github.com/RusJJ/ARMPatch.git "$AML_DIR/ARMPatch"
 
       - name: Fetch AML_PrecompiledLibs
         run: |
-          rm -rf AML_PrecompiledLibs
-          git clone https://github.com/RusJJ/AML_PrecompiledLibs.git AML_PrecompiledLibs
+          rm -rf "$AML_DIR/AML_PrecompiledLibs"
+          git clone https://github.com/RusJJ/AML_PrecompiledLibs.git "$AML_DIR/AML_PrecompiledLibs"
 
       - name: Setup Android NDK
         id: setup-ndk
@@ -38,9 +59,9 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           $ANDROID_NDK_HOME/ndk-build \
-            NDK_PROJECT_PATH=. \
-            APP_BUILD_SCRIPT=ARMPatch/armpatch_src/Android.mk \
-            NDK_APPLICATION_MK=ARMPatch/armpatch_src/Application.mk \
+            NDK_PROJECT_PATH="$AML_DIR" \
+            APP_BUILD_SCRIPT="$AML_DIR/ARMPatch/armpatch_src/Android.mk" \
+            NDK_APPLICATION_MK="$AML_DIR/ARMPatch/armpatch_src/Application.mk" \
             NDK_DEBUG=0 -j$(nproc)
 
       - name: Build AML (both ABIs)
@@ -48,9 +69,9 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           $ANDROID_NDK_HOME/ndk-build \
-            NDK_PROJECT_PATH=. \
-            APP_BUILD_SCRIPT=Android.mk \
-            NDK_APPLICATION_MK=Application.mk \
+            NDK_PROJECT_PATH="$AML_DIR" \
+            APP_BUILD_SCRIPT="$AML_DIR/Android.mk" \
+            NDK_APPLICATION_MK="$AML_DIR/Application.mk" \
             NDK_DEBUG=0 -j$(nproc)
 
       - name: Upload compiled .so files
@@ -58,5 +79,5 @@ jobs:
         with:
           name: AML-libs
           path: |
-            libs/armeabi-v7a/libAML.so
-            libs/arm64-v8a/libAML.so
+            ${{ env.AML_DIR }}/libs/armeabi-v7a/libAML.so
+            ${{ env.AML_DIR }}/libs/arm64-v8a/libAML.so

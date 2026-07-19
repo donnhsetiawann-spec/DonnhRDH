@@ -1,0 +1,53 @@
+name: Build AML (32-bit & 64-bit)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+concurrency:
+  group: build-aml-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone AndroidModLoader 1.2.1 (with submodules)
+        run: |
+          git clone --recurse-submodules --branch 1.2.1 https://github.com/RusJJ/AndroidModLoader.git AML_SRC
+
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+          add-to-path: true
+
+      - name: Build ARMPatch (both ABIs)
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          $ANDROID_NDK_HOME/ndk-build \
+            NDK_PROJECT_PATH=AML_SRC \
+            APP_BUILD_SCRIPT=AML_SRC/ARMPatch/armpatch_src/Android.mk \
+            NDK_APPLICATION_MK=AML_SRC/ARMPatch/armpatch_src/Application.mk \
+            NDK_DEBUG=0 -j$(nproc)
+
+      - name: Build AML (both ABIs)
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          $ANDROID_NDK_HOME/ndk-build \
+            NDK_PROJECT_PATH=AML_SRC \
+            APP_BUILD_SCRIPT=AML_SRC/Android.mk \
+            NDK_APPLICATION_MK=AML_SRC/Application.mk \
+            NDK_DEBUG=0 -j$(nproc)
+
+      - name: Upload compiled .so files
+        uses: actions/upload-artifact@v4
+        with:
+          name: AML-libs
+          path: |
+            AML_SRC/libs/armeabi-v7a/libAML.so
+            AML_SRC/libs/arm64-v8a/libAML.so
